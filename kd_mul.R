@@ -1,0 +1,157 @@
+attach(KD)
+
+install.packages("ggplot2")
+install.packages("dplyr")
+install.packages("corrplot")
+install.packages("gridExtra")
+
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(gridExtra)
+library(MASS)
+
+## 데이터 불러오기 및 파악
+KD <- read.csv('KD.csv')
+KD <- read.csv('KD2.csv')
+
+# is.na(KD)
+tail(KD)
+
+KD <- KD[which(complete.cases(KD)),]
+str(KD)
+sum(is.na(KD))
+summary(KD)
+summary(KD$price) # 평균 13억.서울시..
+
+KD$price <- as.integer(KD$price)
+str(KD)
+
+# 정규호- 
+hist(KD$price) 
+hist(log(KD$price)) # 로그변환 무의미.
+hist(exp(KD$price)) #  =
+
+hist(KD$price)
+hist(KD$sqft_living)
+hist(log(KD$sqft_living))
+summary(KD$sqft_living)
+K3 <- KD
+K3$sqft_living <- log(KD$sqft_living)
+
+hist(KD$yr_built)
+hist(log(KD$yr_built))
+
+hist(KD$price) 
+hist(log(KD$price)) # 로그변환 무의미.
+hist(exp(KD$price)) #  =
+
+str(K3)
+K3 <- K3[-c(1,2,6)] # 회귀분석하기에 의미없는 변수 제거.
+
+log_m1 <- lm(price~., data=K3)
+summary(log_m1) #Multiple R-squared:  0.04092,	Adjusted R-squared:  0.03688 
+cor(KD)
+
+## 오차항 가정 4가지
+
+
+# 정규성 검정 - 
+library(car)
+qqPlot(log_m1,labels=row.names(train2),id.method="identify",simulate=TRUE,main="Q-Q_ plot")
+# > 종속변수(가격)에 로그변환을 취해주니 잔차가 정규성을 띄는 것을 확인할 수 있음.
+shapiro.test(residuals(log_m1)) # 귀무가설 기각되면 정규성 만족 못한거?
+
+# 독립성 검정 -
+durbinWatsonTest(log_m1) # p값이 의미가 없으므로 자기상관은 없다고 할 수 있다. lag의 값 1은 각각의 자료를 바로 다음 자료와 비교했다는 것은 뜻한다
+
+# 선형성 
+crPlots(log_m1)
+
+# 등분산성 - x
+ncvTest(log_m1)
+# 여기서 유의한 결과 가 나온다면 오차의 등분산성 가정이 위배된다고 할 수 있다.
+spreadLevelPlot(log_m1) #. Suggested power transformation 값은 일정하지 않은 오차의 분산을 안정화시키기 위해 필요한 power transformation 값을 제시해준다. ( 0.5의 경우 Y 대신 sqrt(Y) 사용, 0인 경우 log사용 등 ) 
+
+
+# 선형모형에 대한 전반적인 검증
+install.packages('gvlma')
+library(gvlma)
+gvmodel<-gvlma(log_m1)
+summary(gvmodel)
+# 출력물 중 Global stat 을 보면 p값이 0.597로 OLS 회귀의 모든 가정을 만족한다고 할 수 있다. 만일 p값이 0.05 이하인 경우에는 어느 부분이 위배되었는지 평가하여야 한다.
+# > Global Stat  > 3.384e-05ㄹ 가정 만족하지 않음.. ㅜㅜㅜ
+
+
+
+# 이상값
+par(mfrow=c(1,1))
+library(car)
+car::outlierTest(log_m1)
+car::outlierTest(log_m1) # . 이 함수는 가장 큰 잔차가 outlier인지의 통계적인 유의성을 보여준다. 가장 큰 잔차가 유의하지 않다면 데이터에 더 이상 이상치는 없다는 뜻이다. 만일 유의할 경우 이상치를 제거하고 다시 outliertest()를 실시해 보아야 한다.
+
+car::influencePlot(log_m1, id.method="identify", main="Influence Plot",
+                   sub="Circle size is proportional to Cook’s distance")
+
+
+## 대한민국 아파트 매매가 다중회귀분석
+
+cor(KD)
+(m <- lm(price~., data=KD))
+summary(m) # 결정계수 0.1044 > 10% 설명함.
+
+# 1)변수 수정
+KD2 <- KD[,-c(1,2)]
+(m2 <- lm(price~., data=KD2))
+summary(m2) # 결정계수 0.1044 > 10% 설명함.
+
+ 
+full.model=lm(price~.,data=K3)
+reduced.model=step(full.model,direction="backward")
+summary(reduced.model) # log1개 일때&변수2개 - Multiple R-squared:  0.04092,	Adjusted R-squared:  0.03688 
+length(reduced.model) # 13개의 변수로 이루어진 다중회귀모형이 가장 적합한 것으로 나타남.
+
+
+
+# 4. 다중공선성(Multicollinearity) 확인
+install.packages("car")
+library(car)
+install.packages("psych")
+library(psych)
+
+
+pairs.panels(K3[names(K3)]) # 없어보임.
+
+car::vif(log_m1) 
+sqrt(car::vif(log_m1)) > 2  # 모두 F 이무로 다중공선성문제 없음.
+
+
+
+# KD데이터로 한국 강남구 지역의 집값 예측(회귀)
+
+# 먼저 상수항만 포함된 회귀모형을 만들어 줍니다.
+
+m3.con <- lm(price~1,data=K3) 
+m3.both <- step(m3.con,scope=list(lower=m3.con,upper=log_m1), direction = "both")
+m3.both
+summary(m3.both)
+
+pre_price <- predict(m3.both, newdata = K3) 
+pre_price <- as.data.frame(pre_price)
+pre_price
+head(pre_price) # 예측된 집값.
+summary(pre_price)
+summary(K3$price)
+
+# 위 방법은 점추정이었으며 이번에는 구간추정을 해보겠습니다.
+
+pre_price <- predict(m3.both, newdata = K3, interval = "confidence") 
+pre_price <- as.data.frame(pre_price)
+pre_price
+head(pre_price) # lwr와 upr로 구간이 나타나게 됩니다.
+
+
+# 그렇다면 얼마나 잘 예측했는지 실제값과 비교해 보겠습니다.
+
+predict_price <- cbind(pre_price,K3$price) 
+head(predict_price,10) # 이런 식으로 예측해볼 수 있음.
